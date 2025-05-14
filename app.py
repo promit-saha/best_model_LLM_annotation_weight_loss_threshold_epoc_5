@@ -20,7 +20,7 @@ LABEL_COLS = [
 ]
 
 # your chosen values, in the same order:
-threshold_values = [0.60, 0.60, 0.60, 0.60]
+threshold_values = [0.65, 0.65, 0.65, 0.65]
 
 THRESHOLDS = dict(zip(LABEL_COLS, threshold_values))
 
