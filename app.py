@@ -18,12 +18,11 @@ LABEL_COLS = [
     "Information Overload",
     "Mere-Exposure Effect"
 ]
-THRESHOLDS = {
-    "Anchoring":              0.60,
-    "IllusoryTruth":  0.60,   # ← raised from 0.70 to 0.95
-    "InformationOverload":   0.60,
-    "MereExposure":   0.60
-}
+
+# your chosen values, in the same order:
+threshold_values = [0.60, 0.60, 0.60, 0.60]
+
+THRESHOLDS = dict(zip(LABEL_COLS, threshold_values))
 
 def compute_phishing_risk(body: str):
     # 1) Tokenize
