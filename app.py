@@ -5,28 +5,31 @@ import torch
 
 app = Flask(__name__)
 
-# ─── Load model/tokenizer from Hugging Face ────────────────────────────────
-MODEL_REPO = "Promitsaha1/best_model_LLM_annotation_weight_loss_threshold_epoc_5"
-tokenizer = AutoTokenizer.from_pretrained(MODEL_REPO)
-model = AutoModelForSequenceClassification.from_pretrained(MODEL_REPO)
-model.eval()
+# ─── Configuration ───
+MODEL_REPO = "Promitsaha1/best_model_LLM_annotation"
+# Force the slow tokenizer to avoid tiktoken issues
+tokenizer  = AutoTokenizer.from_pretrained(MODEL_REPO, use_fast=False)
+model      = AutoModelForSequenceClassification.from_pretrained(MODEL_REPO)
 
-# ─── Labels and per-label trigger thresholds ───────────────────────────────
+# Temperature scaling factor (1.0 = no scaling)
+TEMPERATURE = float(os.environ.get("TEMPERATURE", 1.0))
+
+# Your four biases and their per-label thresholds
 LABEL_COLS = [
     "Anchoring",
     "Illusory Truth Effect",
     "Information Overload",
     "Mere-Exposure Effect"
 ]
-THRESHOLDS = {
-    "Anchoring":               0.62,
-    "Illusory Truth Effect":   0.65,
-    "Information Overload":    0.62,
-    "Mere-Exposure Effect":    0.62
+THRS = {
+    "Anchoring":                 0.65,
+    "Illusory Truth Effect":     0.65,
+    "Information Overload":      0.65,
+    "Mere-Exposure Effect":      0.65
 }
 
 def compute_phishing_risk(body: str):
-    # 1) Tokenize
+    # 1) Tokenize + model inference
     inputs = tokenizer(
         body,
         truncation=True,
@@ -34,28 +37,30 @@ def compute_phishing_risk(body: str):
         max_length=128,
         return_tensors="pt"
     )
-
-    # 2) Model → logits → sigmoid
     with torch.no_grad():
-        logits = model(**inputs).logits
-    probs = torch.sigmoid(logits).squeeze().tolist()
+        logits = model(**inputs).logits  # shape (1,4)
 
-    # 3) Map labels to probabilities
-    probs_dict = dict(zip(LABEL_COLS, probs))
+    # 2) Apply temperature scaling
+    scaled_logits = logits / TEMPERATURE
 
-    # 4) Determine which labels exceed their thresholds
+    # 3) Sigmoid → probabilities
+    probs = torch.sigmoid(scaled_logits).squeeze().tolist()  # [p0,p1,p2,p3]
+
+    # 4) Risk score = max probability × 100
+    risk_pct = max(probs) * 100
+
+    # 5) Triggered labels using per-label thresholds
     triggered = [
-        lbl for lbl, p in probs_dict.items()
-        if p >= THRESHOLDS[lbl]
+        LABEL_COLS[i]
+        for i, p in enumerate(probs)
+        if p >= THRS[LABEL_COLS[i]]
     ]
 
-    # 5) Compute a single “risk score” (average of all four probabilities ×100)
-    risk_pct = (sum(probs) / len(probs)) * 100
-
-    return risk_pct, probs_dict, triggered
+    return risk_pct, dict(zip(LABEL_COLS, probs)), triggered
 
 @app.route("/", methods=["GET", "POST"])
 def index():
+    # Default context
     context = {
         "body":      "",
         "risk":      None,
@@ -68,7 +73,7 @@ def index():
         risk, probs, triggered = compute_phishing_risk(body)
         context.update({
             "body":      body,
-            "risk":      f"{risk:.1f}",                      # risk out of 100%
+            "risk":      f"{risk:.1f}",
             "probs":     {k: f"{v:.3f}" for k, v in probs.items()},
             "triggered": triggered
         })
@@ -76,5 +81,6 @@ def index():
     return render_template("index.html", **context)
 
 if __name__ == "__main__":
+    # Use the PORT env var for Railway compatibility
     port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=True)
+    app.run(host="0.0.0.0", port=port, debug=False)
