@@ -19,10 +19,10 @@ LABEL_COLS = [
     "Mere-Exposure Effect"
 ]
 THRESHOLDS = {
-    "Anchoring":               0.60,
+    "Anchoring":               0.62,
     "Illusory Truth Effect":   0.65,
-    "Information Overload":    0.60,
-    "Mere-Exposure Effect":    0.60
+    "Information Overload":    0.62,
+    "Mere-Exposure Effect":    0.62
 }
 
 def compute_phishing_risk(body: str):
