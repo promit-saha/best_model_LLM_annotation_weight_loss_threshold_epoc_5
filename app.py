@@ -5,24 +5,25 @@ import torch
 
 app = Flask(__name__)
 
-# ─── Load model/tokenizer from Hugging Face ───
+# ─── Load model/tokenizer from Hugging Face ────────────────────────────────
 MODEL_REPO = "Promitsaha1/best_model_LLM_annotation_weight_loss_threshold_epoc_5"
 tokenizer = AutoTokenizer.from_pretrained(MODEL_REPO)
 model = AutoModelForSequenceClassification.from_pretrained(MODEL_REPO)
 model.eval()
 
-# ─── Bias labels and per-label trigger thresholds ───
+# ─── Labels and per-label trigger thresholds ───────────────────────────────
 LABEL_COLS = [
     "Anchoring",
     "Illusory Truth Effect",
     "Information Overload",
     "Mere-Exposure Effect"
 ]
-
-# your chosen values, in the same order:
-threshold_values = [0.65, 0.65, 0.65, 0.65]
-
-THRESHOLDS = dict(zip(LABEL_COLS, threshold_values))
+THRESHOLDS = {
+    "Anchoring":               0.60,
+    "Illusory Truth Effect":   0.65,
+    "Information Overload":    0.60,
+    "Mere-Exposure Effect":    0.60
+}
 
 def compute_phishing_risk(body: str):
     # 1) Tokenize
@@ -39,21 +40,19 @@ def compute_phishing_risk(body: str):
         logits = model(**inputs).logits
     probs = torch.sigmoid(logits).squeeze().tolist()
 
-    # 3) Which labels exceed their thresholds?
+    # 3) Map labels to probabilities
+    probs_dict = dict(zip(LABEL_COLS, probs))
+
+    # 4) Determine which labels exceed their thresholds
     triggered = [
-        LABEL_COLS[i]
-        for i, p in enumerate(probs)
-        if p >= THRESHOLDS[LABEL_COLS[i]]
+        lbl for lbl, p in probs_dict.items()
+        if p >= THRESHOLDS[lbl]
     ]
 
-    # 4) Compute risk as the max probability among triggered cues (or 0)
-    if triggered:
-        risk_pct = max(p for i, p in enumerate(probs)
-                       if LABEL_COLS[i] in triggered) * 100
-    else:
-        risk_pct = 0.0
+    # 5) Compute a single “risk score” (average of all four probabilities ×100)
+    risk_pct = (sum(probs) / len(probs)) * 100
 
-    return risk_pct, dict(zip(LABEL_COLS, probs)), triggered
+    return risk_pct, probs_dict, triggered
 
 @app.route("/", methods=["GET", "POST"])
 def index():
@@ -69,7 +68,7 @@ def index():
         risk, probs, triggered = compute_phishing_risk(body)
         context.update({
             "body":      body,
-            "risk":      f"{risk:.1f}",
+            "risk":      f"{risk:.1f}",                      # risk out of 100%
             "probs":     {k: f"{v:.3f}" for k, v in probs.items()},
             "triggered": triggered
         })
