@@ -5,13 +5,13 @@ import torch
 
 app = Flask(__name__)
 
-# ─── Load model/tokenizer from Hugging Face ────────────────────────────────
+# ─── Load model + tokenizer ─────────────────────────────────────────────────
 MODEL_REPO = "Promitsaha1/best_model_LLM_annotation_weight_loss_threshold_epoc_5"
 tokenizer = AutoTokenizer.from_pretrained(MODEL_REPO)
 model = AutoModelForSequenceClassification.from_pretrained(MODEL_REPO)
 model.eval()
 
-# ─── Labels and per-label trigger thresholds ───────────────────────────────
+# ─── Labels and their trigger thresholds ────────────────────────────────────
 LABEL_COLS = [
     "Anchoring",
     "Illusory Truth Effect",
@@ -26,7 +26,7 @@ THRESHOLDS = {
 }
 
 def compute_phishing_risk(body: str):
-    # 1) Tokenize
+    # 1) Tokenize + infer
     inputs = tokenizer(
         body,
         truncation=True,
@@ -34,23 +34,24 @@ def compute_phishing_risk(body: str):
         max_length=128,
         return_tensors="pt"
     )
-
-    # 2) Model → logits → sigmoid
     with torch.no_grad():
         logits = model(**inputs).logits
     probs = torch.sigmoid(logits).squeeze().tolist()
 
-    # 3) Map labels to probabilities
+    # 2) Map labels ↔ probabilities
     probs_dict = dict(zip(LABEL_COLS, probs))
 
-    # 4) Determine which labels exceed their thresholds
+    # 3) Find which cues exceed their threshold
     triggered = [
         lbl for lbl, p in probs_dict.items()
         if p >= THRESHOLDS[lbl]
     ]
 
-    # 5) Compute a single “risk score” (average of all four probabilities ×100)
-    risk_pct = (sum(probs) / len(probs)) * 100
+    # 4) Risk = average probability of only the triggered cues
+    if triggered:
+        risk_pct = sum(probs_dict[l] for l in triggered) / len(triggered) * 100
+    else:
+        risk_pct = 0.0
 
     return risk_pct, probs_dict, triggered
 
@@ -68,7 +69,7 @@ def index():
         risk, probs, triggered = compute_phishing_risk(body)
         context.update({
             "body":      body,
-            "risk":      f"{risk:.1f}",                      # risk out of 100%
+            "risk":      f"{risk:.1f}%",                # e.g. "73.6%"
             "probs":     {k: f"{v:.3f}" for k, v in probs.items()},
             "triggered": triggered
         })
