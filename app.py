@@ -20,7 +20,7 @@ LABEL_COLS = [
 ]
 THRESHOLDS = {
     "Anchoring":               0.60,
-    "Illusory Truth Effect":   0.95,
+    "Illusory Truth Effect":   0.65,
     "Information Overload":    0.60,
     "Mere-Exposure Effect":    0.60
 }
